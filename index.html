@@ -419,8 +419,8 @@ function AcessoNegado() {
 /* ============================================================
    1. ESPAÇO ZEN & CHAT COGNITIVO (Gemini API)
    ============================================================ */
-const GEMINI_KEY = 'AQ.Ab8RN6KHWN8eseFbR6VlSF3yBsJPBDjzgCmHy_Ewz4YkLKHk8Q'.replace(']', '').trim();
-const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=' + GEMINI_KEY;
+const GEMINI_KEY = 'AIzaSyAIzaSyBVhLxFl6qBpRRyFwc6iEyAyZYU6B0onwUD3r2IBmM5lq8asoi-qy82KW4XfTWHWxGQ'.replace(']', '').trim();
+const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=' + GEMINI_KEY;
 const SYSTEM_INSTRUCTION = 'Você é um psicólogo acolhedor, empático e focado em escuta ativa. Dê respostas curtas (máximo 3 parágrafos), calmas e humanas, ajudando a aliviar a ansiedade do usuário. Lembre-se de nunca dar diagnósticos médicos ou prescrições.';
 
 const RESPOSTAS_FALLBACK = [
@@ -1535,6 +1535,211 @@ function PainelDenuncias({ role, denuncias, setDenuncias, mostrarToast }) {
     </div>
   );
 }
+/* ------------------------------- CONSTANTES ------------------------------ */
+
+const SISTEMA_SUGESTAO_IA = `
+Você é um consultor sênior de RH e saúde ocupacional, especializado em
+mediação de conflitos, prevenção de assédio e gestão de riscos psicossociais.
+Você vai receber o relato de uma denúncia interna (Escuta Blindada) e deve
+propor um plano de ação para o time de RH/Administração.
+
+Responda SOMENTE com um JSON válido (sem markdown, sem texto fora do JSON),
+no seguinte formato exato:
+
+{
+  "urgencia": "baixa" | "media" | "alta",
+  "resumo": "resumo objetivo da situação em até 2 frases",
+  "acoes_imediatas": ["ação curta 1", "ação curta 2", "ação curta 3"],
+  "investigacao": "recomendação de como conduzir a apuração, com cuidado e sigilo",
+  "comunicacao_sugerida": "um parágrafo curto e empático para responder ao denunciante",
+  "prevencao": "uma recomendação estrutural para reduzir recorrência"
+}
+
+Nunca acuse nomeadamente terceiros sem provas, nunca dê conselhos jurídicos
+definitivos (apenas oriente buscar jurídico/compliance quando cabível), e
+mantenha um tom profissional, empático e prático.
+`.trim();
+
+const SUGESTAO_FALLBACK = {
+  urgencia: 'media',
+  resumo: '',
+  acoes_imediatas: [
+    'Agendar escuta individual confidencial com o denunciante em até 48h',
+    'Preservar o anonimato se solicitado, restringindo o acesso ao relato',
+    'Registrar formalmente o caso no protocolo interno de ouvidoria',
+  ],
+  investigacao: 'Conduzir apuração discreta com pessoas de confiança de RH, ouvindo as partes envolvidas separadamente e sem expor a identidade do denunciante.',
+  comunicacao_sugerida: 'Obrigado por compartilhar isso com a gente. Levamos sua mensagem a sério e já estamos avaliando os próximos passos com cuidado e sigilo. Retornaremos em breve.',
+  prevencao: 'Reforçar treinamentos de liderança sobre escuta ativa e canais de denúncia, e revisar periodicamente a carga de trabalho do setor envolvido.',
+};
+
+const URGENCIA_UI = {
+  alta:  { cor: '#ef4444', bg: 'bg-red-50 border-red-200',    texto: 'text-red-600',    label: 'Urgência alta',  icone: 'Siren' },
+  media: { cor: '#f59e0b', bg: 'bg-amber-50 border-amber-200',texto: 'text-amber-600',  label: 'Urgência média', icone: 'AlertTriangle' },
+  baixa: { cor: '#10b981', bg: 'bg-emerald-50 border-emerald-200', texto: 'text-emerald-600', label: 'Urgência baixa', icone: 'CheckCircle2' },
+};
+
+
+/* -------------------------------- COMPONENTE ------------------------------ */
+
+function SugestoesIA({role, denuncias, mostrarToast }) {
+  const [sugestoes, setSugestoes] = useState(() => store.get('ms_sugestoes_ia', {}));
+  const [carregando, setCarregando] = useState({});
+  if (role !== 'admin') return <AcessoNegado />;
+
+  useEffect(() => store.set('ms_sugestoes_ia', sugestoes), [sugestoes]);
+
+  async function gerarSugestao(denuncia) {
+    setCarregando((c) => ({ ...c, [denuncia.id]: true }));
+    try {
+      const resp = await fetch(GEMINI_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          system_instruction: { parts: [{ text: SISTEMA_SUGESTAO_IA }] },
+          contents: [{ role: 'user', parts: [{ text: 'Relato da denúncia:\n\n' + denuncia.texto }] }],
+          generationConfig: { temperature: 0.4, maxOutputTokens: 700 },
+        }),
+      });
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
+      const data = await resp.json();
+      const bruto =
+        data && data.candidates && data.candidates[0] &&
+        data.candidates[0].content && data.candidates[0].content.parts &&
+        data.candidates[0].content.parts[0] && data.candidates[0].content.parts[0].text;
+      if (!bruto) throw new Error('Resposta vazia');
+
+      const limpo = bruto.replace(/```json|```/g, '').trim();
+      const parsed = JSON.parse(limpo);
+
+      setSugestoes((s) => ({ ...s, [denuncia.id]: parsed }));
+      mostrarToast('Sugestão da IA gerada');
+    } catch (e) {
+      setSugestoes((s) => ({ ...s, [denuncia.id]: SUGESTAO_FALLBACK }));
+      mostrarToast('Não foi possível gerar agora — exibindo orientação padrão');
+    } finally {
+      setCarregando((c) => ({ ...c, [denuncia.id]: false }));
+    }
+  }
+
+  const pendentes = denuncias.filter((d) => d.status !== 'resolvida');
+
+  return (
+    <div className="max-w-4xl">
+      <SectionHeader
+        icon="Lightbulb"
+        eyebrow="Assistente de gestão"
+        title="Sugestões de IA para denúncias"
+        subtitle="Gere um plano de ação estruturado — urgência, primeiros passos, investigação, comunicação e prevenção — para cada relato recebido pela Escuta Blindada."
+      />
+
+      {pendentes.length === 0 && (
+        <div className="glass rounded-2xl shadow-glass p-12 text-center fade-up">
+          <Icon name="Inbox" size={38} className="text-teal-300 mx-auto mb-3" />
+          <h3 className="font-display font-bold text-slate-700 mb-1">Nenhuma denúncia em aberto</h3>
+          <p className="text-sm text-slate-500">
+            Quando houver relatos pendentes na Escuta Blindada, eles aparecerão aqui para
+            você gerar sugestões de resolução com IA.
+          </p>
+        </div>
+      )}
+
+      <div className="space-y-4">
+        {pendentes.slice().reverse().map((d) => {
+          const sugestao = sugestoes[d.id];
+          const loading = !!carregando[d.id];
+          const urg = sugestao ? URGENCIA_UI[sugestao.urgencia] || URGENCIA_UI.media : null;
+
+          return (
+            <article key={d.id} className="glass rounded-2xl shadow-glass p-5 fade-up">
+              <div className="flex items-start justify-between gap-3 flex-wrap">
+                <div className="flex items-center gap-2">
+                  <span className="w-9 h-9 rounded-xl bg-slate-800 text-slate-300 flex items-center justify-center shrink-0">
+                    <Icon name={d.anonima ? 'VenetianMask' : 'User'} size={17} />
+                  </span>
+                  <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+                    {d.anonima ? 'Relato anônimo' : d.autor?.nome} · Protocolo #{String(d.id).slice(-6)}
+                  </p>
+                </div>
+                {urg && (
+                  <span className={'text-[10px] font-bold uppercase tracking-wider px-3 py-1 rounded-full border ' + urg.bg + ' ' + urg.texto}>
+                    {urg.label}
+                  </span>
+                )}
+              </div>
+
+              <p className="text-sm text-slate-600 leading-relaxed mt-3 bg-white/60 border border-slate-100 rounded-2xl p-4">
+                {d.texto}
+              </p>
+
+              {!sugestao && !loading && (
+                <button onClick={() => gerarSugestao(d)}
+                  className="mt-4 text-xs font-semibold bg-gradient-to-br from-indigo-500 to-teal-600 hover:from-indigo-400 hover:to-teal-500 text-white rounded-2xl px-4 py-2.5 flex items-center gap-2 transition-all duration-300 ease-in-out hover:-translate-y-0.5">
+                  <Icon name="Sparkles" size={14} /> Gerar sugestão com IA
+                </button>
+              )}
+
+              {loading && (
+                <div className="mt-4 flex items-center gap-2 text-slate-500 text-xs">
+                  <span className="typing-dot w-1.5 h-1.5 rounded-full bg-teal-500 inline-block"></span>
+                  <span className="typing-dot w-1.5 h-1.5 rounded-full bg-teal-500 inline-block" style={{ animationDelay: '.2s' }}></span>
+                  <span className="typing-dot w-1.5 h-1.5 rounded-full bg-teal-500 inline-block" style={{ animationDelay: '.4s' }}></span>
+                  Analisando relato e montando plano de ação...
+                </div>
+              )}
+
+              {sugestao && (
+                <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div className="bg-white/70 border border-slate-100 rounded-2xl p-4 md:col-span-2">
+                    <p className="text-xs font-bold uppercase tracking-widest text-teal-600 mb-1.5 flex items-center gap-1.5">
+                      <Icon name="FileText" size={13} /> Resumo
+                    </p>
+                    <p className="text-sm text-slate-700">{sugestao.resumo}</p>
+                  </div>
+
+                  <div className="bg-white/70 border border-slate-100 rounded-2xl p-4">
+                    <p className="text-xs font-bold uppercase tracking-widest text-teal-600 mb-1.5 flex items-center gap-1.5">
+                      <Icon name="ListChecks" size={13} /> Ações imediatas
+                    </p>
+                    <ul className="text-sm text-slate-700 space-y-1.5 list-disc list-inside">
+                      {(sugestao.acoes_imediatas || []).map((a, i) => <li key={i}>{a}</li>)}
+                    </ul>
+                  </div>
+
+                  <div className="bg-white/70 border border-slate-100 rounded-2xl p-4">
+                    <p className="text-xs font-bold uppercase tracking-widest text-teal-600 mb-1.5 flex items-center gap-1.5">
+                      <Icon name="Search" size={13} /> Investigação recomendada
+                    </p>
+                    <p className="text-sm text-slate-700">{sugestao.investigacao}</p>
+                  </div>
+
+                  <div className="bg-indigo-50/80 border border-indigo-100 rounded-2xl p-4">
+                    <p className="text-xs font-bold uppercase tracking-widest text-indigo-600 mb-1.5 flex items-center gap-1.5">
+                      <Icon name="MessageCircle" size={13} /> Comunicação sugerida ao denunciante
+                    </p>
+                    <p className="text-sm text-indigo-900/90 italic">"{sugestao.comunicacao_sugerida}"</p>
+                  </div>
+
+                  <div className="bg-emerald-50/80 border border-emerald-100 rounded-2xl p-4">
+                    <p className="text-xs font-bold uppercase tracking-widest text-emerald-600 mb-1.5 flex items-center gap-1.5">
+                      <Icon name="ShieldCheck" size={13} /> Prevenção futura
+                    </p>
+                    <p className="text-sm text-emerald-900/90">{sugestao.prevencao}</p>
+                  </div>
+
+                  <button onClick={() => gerarSugestao(d)}
+                    className="md:col-span-2 text-xs font-medium text-teal-700 hover:text-teal-500 flex items-center gap-1.5 transition-all duration-300 mt-1">
+                    <Icon name="RefreshCw" size={13} /> Gerar novamente
+                  </button>
+                </div>
+              )}
+            </article>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 /* ============================================================
    NAVEGAÇÃO: SIDEBAR + CABEÇALHO DINÂMICO
@@ -1548,6 +1753,7 @@ const MENU = [
   { id: 'dashboard', label: 'Dashboard Produtividade', icone: 'BarChart3', admin: true },
   { id: 'mapa', label: 'Mapa de Risco', icone: 'Map', admin: true },
   { id: 'denuncias', label: 'Gestão de Denúncias', icone: 'Siren', admin: true },
+  { id: 'sugestoes', label: 'Sugestões de IA', icone: 'Lightbulb', admin: true }
 ];
 
 function Sidebar({ tab, setTab, role, aberta, fechar, pendentes }) {
@@ -1745,6 +1951,7 @@ function App() {
           {tab === 'dashboard' && <DashboardAdmin role={role} />}
           {tab === 'mapa' && <MapaRisco role={role} />}
           {tab === 'denuncias' && <PainelDenuncias role={role} denuncias={denuncias} setDenuncias={setDenuncias} mostrarToast={mostrarToast} />}
+          {tab === 'sugestoes' &&  <SugestoesIA role={role} denuncias={denuncias} mostrarToast={mostrarToast} />}
         </div>
       </main>
 
@@ -1763,4 +1970,4 @@ try {
 }
 </script>
 </body>
-</html>
+</html>bla bla bla ble ble ble blu blu blu ablublublublublu ling gan guli guli whata ligan
