@@ -1135,14 +1135,14 @@ function Perfil({ usuario, humores, setHumores, metas, setMetas }) {
    6. DASHBOARD DE PRODUTIVIDADE (Exclusivo Admin)
    ============================================================ */
 const SPRINTS = [
-  { sprint: 'S1', humor: 72, entregas: 18 },
-  { sprint: 'S2', humor: 68, entregas: 21 },
-  { sprint: 'S3', humor: 61, entregas: 24 },
-  { sprint: 'S4', humor: 55, entregas: 26 },
-  { sprint: 'S5', humor: 49, entregas: 22 },
-  { sprint: 'S6', humor: 58, entregas: 19 },
-  { sprint: 'S7', humor: 66, entregas: 23 },
-  { sprint: 'S8', humor: 71, entregas: 27 },
+  { sprint: 'S1', felicidade: 72, entregas: 18 },
+  { sprint: 'S2', felicidade: 68, entregas: 21 },
+  { sprint: 'S3', felicidade: 61, entregas: 24 },
+  { sprint: 'S4', felicidade: 55, entregas: 26 },
+  { sprint: 'S5', felicidade: 49, entregas: 22 },
+  { sprint: 'S6', felicidade: 58, entregas: 19 },
+  { sprint: 'S7', felicidade: 66, entregas: 23 },
+  { sprint: 'S8', felicidade: 71, entregas: 27 },
 ];
 
 const BURNOUT_SETORES = [
@@ -1204,7 +1204,7 @@ function GraficoLinhas() {
           <g style={{ pointerEvents: 'none' }}>
             <rect x={Math.min(Math.max(pontosFel[hover][0] - 62, 6), W - 130)} y={16} width="124" height="52" rx="12" fill="#0f172a" opacity="0.92" />
             <text x={Math.min(Math.max(pontosFel[hover][0], 68), W - 68)} y={36} textAnchor="middle" fontSize="11" fill="#5eead4" fontWeight="700">
-              Felicidade: {SPRINTS[hover].felicidade}%
+              Humor: {SPRINTS[hover].felicidade}%
             </text>
             <text x={Math.min(Math.max(pontosFel[hover][0], 68), W - 68)} y={54} textAnchor="middle" fontSize="11" fill="#c7d2fe">
               Entregas: {SPRINTS[hover].entregas} itens
